@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-#   Copyright (C) 2011 Jan-Philip Gehrcke
+#   Copyright (C) 2011, 2012 Jan-Philip Gehrcke
 #
 #   Licensed under the Apache License, Version 2.0 (the "License");
 #   you may not use this file except in compliance with the License.
@@ -46,14 +46,6 @@ def dlg_models_pdb_format(dlg_raw_lines):
             if len(line) > 8:
                 # do not use the "DOCKED: " at the beginning of the line
                 modellines.append(line[8:])
-
-
-#def command(dlg_prefix, *args, **kwargs):
-#    for k, v in kwargs.items():
-#        print "%s = %s" % (k, v)
-#
-#    for arg in args:
-#        print "%s" % (arg)
 
 
 def dlg_models_to_objects(dlg_prefix, directory):
@@ -170,49 +162,15 @@ def coc(objname):
     m = cmd.get_model(objname)
     atomcount = len(m.atom)
     #print "atomcount: %s" % atomcount
-#   numpy implementation does NOT improve performance, because accessing
-#   the atom coordinates is the bottleneck
-#    center_x = numpy.mean(numpy.array([a.coord[0] for a in m.atom]))
-#    center_y = numpy.mean(numpy.array([a.coord[1] for a in m.atom]))
-#    center_z = numpy.mean(numpy.array([a.coord[2] for a in m.atom]))
-
-#    print "center_x: %r, type: %s" % (float(center_x), type(float(center_x)))
 
     center_x = sum((a.coord[0] for a in m.atom))/atomcount
     center_y = sum((a.coord[1] for a in m.atom))/atomcount
     center_z = sum((a.coord[2] for a in m.atom))/atomcount
-    #print "center: %s %s %s" % (center_x, center_y, center_z)
-#   numpy return
-#    return (float(center_x), float(center_y), float(center_z))
+
     return (center_x, center_y, center_z)
 
 cmd.extend("coc_spheres_for_dlg_prefix", coc_spheres_for_dlg_prefix)
 cmd.extend("load_all_dlg_models", load_all_dlg_models)
-
-
-def print_most_occupied_spherical_volumes2(centers, sphere_radius, first_n):
-    """
-    `centers`: tuple of coordinate lists (used as sphere centers)
-    `sphere_rad`: sphere radius
-    For each sphere center, the number of other sphere centers within
-    the sphere will be determined and saved to a histogram `h`.
-    A CENTER CAN ONLY BE IN ONE SPHERE HERE
-    """
-    #print "len(centers): %s" % len(centers)
-    h = defaultdict(int)
-    for i, center_i in enumerate(centers):
-        #print "i: %s ; center_i: %s" % (i, center_i)
-        for center_j in centers[:i]:
-            d = distance(center_i, center_j)
-            #print "distance: %s, sphere_radius: %s" % (d, sphere_radius)
-            #print "type(d): %s, type(radius): %s" % (type(d), type(sphere_radius))
-            if d < sphere_radius:
-                #print "ADD TO CENTER %s" % (center_i, )
-                h[center_i] += 1
-    sorted_histogram = sorted(
-        h.iteritems(), key=operator.itemgetter(1), reverse=True)
-    for center, occupancy in sorted_histogram[:first_n]:
-        print "%s: %s" % (center, occupancy)
 
 
 def filtered_sphere_histogram(centers, sphere_radius):
@@ -286,31 +244,9 @@ def ligand_centers(dlg_prefix, directory):
     print "Object deletetion time (s): %s" % (time.time()-t, )
     return centers
 
-def print_most_occupied_spherical_volumes_cmd(
-        dlg_prefix, radius, first_n, directory=None):
-    t = time.time()
-    centers = ligand_centers(dlg_prefix, directory)
-    print "ligand_centers() time (s): %s" % (time.time()-t, )
-    # find most occupied, not overlapping spheres
-    t = time.time()
-    filtered_histogram = filtered_sphere_histogram(
-        centers=centers, sphere_radius=float(radius))
-    print "filtered_sphere_histogram() time (s): %s" % (time.time()-t, )
-    # print their properties (coords, occupancy):
-    print "filtered histogram:"
-
-    # file output for convenience:
-    f = open("COORDINATE_CENTERS.txt", "w")
-    for center, occupancy in filtered_histogram[:int(first_n)]:
-        print "%s: %f,%f,%f: %s" % (n, center[0], center[1], center[2], occupancy)
-        # print "%s: %s" % (center, occupancy)
-        f.write("%s\n" % " ".join(["%f" % c for c in center]))
-    f.close()
-    return filtered_histogram
-
 
 def show_most_occupied_spherical_volumes_cmd(
-        dlg_prefix, radius, first_n, directory=None):
+        dlg_prefix, radius, first_n, directory=None, coordinate_file=None):
     """
     Print filtered sphere histogram, draw most occupied spheres.
     """
@@ -320,9 +256,17 @@ def show_most_occupied_spherical_volumes_cmd(
     # OpenGL shaders: http://www.pymolwiki.org/index.php/Spheres
     cmd.set("sphere_mode", 5)
     highest_occupancy = filtered_histogram[0][1]
+
+    # write coc coordinates to file so that each line contains three numbers
+    # that can be directly inserted in the autogrid parameter file
+    if coordinate_file:
+        f = open(coordinate_file, "w")
+
     for center, occupancy in filtered_histogram[:int(first_n)]:
         n = cmd.get_unused_name(prefix="most_occupied_spheres")
         print "%s: %f,%f,%f: %s" % (n, center[0], center[1], center[2], occupancy)
+        if coordinate_file:
+            f.write("%s\n" % " ".join(["%f" % c for c in center]))
         cmd.pseudoatom(n, pos=center)
         cmd.show("spheres", n)
         r = float(radius) * (float(occupancy)/highest_occupancy)
@@ -331,12 +275,13 @@ def show_most_occupied_spherical_volumes_cmd(
     cmd.center()
     cmd.zoom()
 
+    if coordinate_file:
+        f.close()
+
 
 def distance(x, y):
     return math.sqrt(sum(((e1-e2)**2 for e1, e2 in zip(x, y))))
 
-
-cmd.extend("print_most_occupied_spherical_volumes", print_most_occupied_spherical_volumes_cmd)
 
 cmd.extend("show_most_occupied_spherical_volumes", show_most_occupied_spherical_volumes_cmd)
 
