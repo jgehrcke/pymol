@@ -14,7 +14,7 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 #
-
+from __future__ import with_statement
 
 from pymol import cmd
 from collections import defaultdict
@@ -246,37 +246,47 @@ def ligand_centers(dlg_prefix, directory):
 
 
 def show_most_occupied_spherical_volumes_cmd(
-        dlg_prefix, radius, first_n, directory=None, coordinate_file=None):
+        dlg_prefix, radius, first_n, directory=None, coordinate_file=None,
+        show=True):
     """
     Print filtered sphere histogram, draw most occupied spheres.
     """
+
+    if show in ["False", "false", "0"]:
+        show = False
+
+    print "\nReading files, calculating centers of coordinates (COCs)..."
     centers = ligand_centers(dlg_prefix, directory)
+    print "\nBuilding occupancy histogram of COC-spheres..."
     filtered_histogram = filtered_sphere_histogram(
         centers=centers, sphere_radius=float(radius))
-    # OpenGL shaders: http://www.pymolwiki.org/index.php/Spheres
-    cmd.set("sphere_mode", 5)
     highest_occupancy = filtered_histogram[0][1]
 
     # write coc coordinates to file so that each line contains three numbers
     # that can be directly inserted in the autogrid parameter file
     if coordinate_file:
-        f = open(coordinate_file, "w")
+        print "\nWriting coordinate file `%s`..." % coordinate_file
+        with open(coordinate_file, "w") as f:
+            for center, occupancy in filtered_histogram[:int(first_n)]:
+                f.write("%s\n" % " ".join(["%f" % c for c in center]))
+                print "%f %f %f (%s)" % (
+                    center[0], center[1], center[2], occupancy)
 
-    for center, occupancy in filtered_histogram[:int(first_n)]:
-        n = cmd.get_unused_name(prefix="most_occupied_spheres")
-        print "%s: %f,%f,%f: %s" % (n, center[0], center[1], center[2], occupancy)
-        if coordinate_file:
-            f.write("%s\n" % " ".join(["%f" % c for c in center]))
-        cmd.pseudoatom(n, pos=center)
-        cmd.show("spheres", n)
-        r = float(radius) * (float(occupancy)/highest_occupancy)
-        cmd.alter(n, "vdw=%s" % r)
-        cmd.set(name="sphere_color", value="red", selection=n)
-    cmd.center()
-    cmd.zoom()
-
-    if coordinate_file:
-        f.close()
+    if show:
+        print "\nDrawing spheres..."
+        # OpenGL shaders: http://www.pymolwiki.org/index.php/Spheres
+        cmd.set("sphere_mode", 5)
+        for center, occupancy in filtered_histogram[:int(first_n)]:
+            n = cmd.get_unused_name(prefix="most_occupied_spheres")
+            print "%s: %f,%f,%f: %s" % (\
+                n, center[0], center[1], center[2], occupancy)
+            cmd.pseudoatom(n, pos=center)
+            cmd.show("spheres", n)
+            r = float(radius) * (float(occupancy)/highest_occupancy)
+            cmd.alter(n, "vdw=%s" % r)
+            cmd.set(name="sphere_color", value="red", selection=n)
+        cmd.center()
+        cmd.zoom()
 
 
 def distance(x, y):
